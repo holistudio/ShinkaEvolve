@@ -1,19 +1,39 @@
-"""Constructor-based bathroom fixture layout optimization"""
-
 import numpy as np
 
 
-def construct_packing():
+def construct_packing(
+    entrance_wall='bottom',
+    entrance_offset=0.5,
+    toilet_wall_x='left',
+    toilet_wall_y='top',
+    toilet_offset_x=0.0,
+    toilet_offset_y=0.0,
+    urinal_wall='left',
+    urinal_offset=0.1,
+    basin_wall='left',
+    basin_offset=0.15
+):
     """
     Construct an arrangement of 3 bathroom fixtures (toilet, urinal, wash basin)
-    in a 3.0 x 2.5 unit rectangle to optimize layout based on entrance position.
+    in a 3.0 x 2.5 unit rectangle to optimize layout based on parameters.
+    
+    HYPERPARAMETERS:
+    - entrance_wall: 'bottom', 'top', 'left', 'right'
+    - entrance_offset: 0.0 to 1.0 (position along entrance wall)
+    
+    - toilet_wall_x: 'left', 'right' (which vertical edge toilet touches)
+    - toilet_wall_y: 'bottom', 'top' (which horizontal edge toilet touches)
+    - toilet_offset_x: 0.0 to 1.0 (offset along vertical wall)
+    - toilet_offset_y: 0.0 to 1.0 (offset along horizontal wall)
+    
+    - urinal_wall: 'bottom', 'top', 'left', 'right' (which wall for urinal)
+    - urinal_offset: 0.0 to 1.0 (position along urinal wall)
+    
+    - basin_wall: 'bottom', 'top', 'left', 'right' (which wall for basin)
+    - basin_offset: 0.0 to 1.0 (position along basin wall)
 
     Returns:
         Tuple of (positions, dimensions, rotations, fixture_names)
-        positions: np.array of shape (3, 2) with (x, y) bottom-left corners
-        dimensions: np.array of shape (3, 2) with (width, height) for each fixture
-        rotations: np.array of shape (3,) with boolean rotation flags (True = 90° rotated)
-        fixture_names: list of fixture names ["toilet", "urinal", "wash_basin"]
     """
     # Define outer bounds
     outer_width = 3.0
@@ -22,12 +42,13 @@ def construct_packing():
     # Define fixtures with their constraints
     fixtures = define_fixtures()
     
-    # Select entrance point (this is the key generator variable)
-    entrance = select_entrance_point()
-    
-    # Generate layout based on entrance
-    positions, dimensions, rotations, fixture_names = generate_layout_from_entrance(
-        entrance, fixtures, outer_width, outer_height
+    # Generate layout from parameters
+    positions, dimensions, rotations, fixture_names = generate_layout_from_params(
+        entrance_wall, entrance_offset,
+        toilet_wall_x, toilet_wall_y, toilet_offset_x, toilet_offset_y,
+        urinal_wall, urinal_offset,
+        basin_wall, basin_offset,
+        fixtures, outer_width, outer_height
     )
     
     return positions, dimensions, rotations, fixture_names
@@ -106,25 +127,26 @@ def select_entrance_point():
     }
 
 
-def generate_layout_from_entrance(entrance, fixtures, outer_width, outer_height):
+def generate_layout_from_params(entrance_wall, entrance_offset,
+                               toilet_wall_x, toilet_wall_y, toilet_offset_x, toilet_offset_y,
+                               urinal_wall, urinal_offset,
+                               basin_wall, basin_offset,
+                               fixtures, outer_width, outer_height):
     """
-    Generate fixture positions based on entrance location.
-    
-    Strategy:
-    1. Toilet goes in corner (preferably away from entrance)
-    2. Wash basin near entrance (for accessibility)
-    3. Urinal fills remaining wall space
+    Generate fixture positions based on hyperparameters.
     
     Args:
-        entrance: dict with entrance info
-        fixtures: dict with fixture specs
+        entrance_wall, entrance_offset: entrance position
+        toilet_wall_x, toilet_wall_y: which perpendicular walls toilet touches
+        toilet_offset_x, toilet_offset_y: position along those walls
+        urinal_wall, urinal_offset: urinal wall and position
+        basin_wall, basin_offset: basin wall and position
+        fixtures: fixture specifications
         outer_width, outer_height: container dimensions
         
     Returns:
         positions, dimensions, rotations, fixture_names
     """
-    entry_wall = entrance['wall']
-    
     # Initialize arrays for 3 fixtures
     positions = np.zeros((3, 2))
     dimensions = np.zeros((3, 2))
@@ -136,23 +158,20 @@ def generate_layout_from_entrance(entrance, fixtures, outer_width, outer_height)
     urinal = fixtures['urinal']
     basin = fixtures['wash_basin']
     
-    # Place toilet in corner based on entrance wall
-    toilet_corner = select_toilet_corner(entry_wall)
-    toilet_pos, toilet_rot = place_toilet_in_corner(
-        toilet_corner, toilet, outer_width, outer_height
+    # Place toilet using two perpendicular walls
+    toilet_pos, toilet_rot = place_toilet_on_walls(
+        toilet_wall_x, toilet_wall_y, toilet_offset_x, toilet_offset_y,
+        toilet, outer_width, outer_height
     )
     
-    # Place wash basin near entrance
-    basin_pos, basin_rot = place_wash_basin_near_entrance(
-        entrance, basin, outer_width, outer_height, toilet_pos, toilet, toilet_rot
+    # Place urinal on specified wall
+    urinal_pos, urinal_rot = place_fixture_on_wall(
+        urinal_wall, urinal_offset, urinal, outer_width, outer_height
     )
     
-    # Place urinal on remaining edge
-    urinal_pos, urinal_rot = place_urinal_on_edge(
-        entry_wall, urinal, outer_width, outer_height, 
-        [toilet_pos, basin_pos], 
-        [toilet, basin],
-        [toilet_rot, basin_rot]
+    # Place wash basin on specified wall
+    basin_pos, basin_rot = place_fixture_on_wall(
+        basin_wall, basin_offset, basin, outer_width, outer_height
     )
     
     # Assemble results in order: toilet, urinal, wash_basin
@@ -160,7 +179,7 @@ def generate_layout_from_entrance(entrance, fixtures, outer_width, outer_height)
     positions[1] = urinal_pos
     positions[2] = basin_pos
     
-    # Dimensions (accounting for rotation)
+    # Dimensions (base dimensions, rotation applied during visualization)
     dimensions[0] = [toilet['width'], toilet['height']]
     dimensions[1] = [urinal['width'], urinal['height']]
     dimensions[2] = [basin['width'], basin['height']]
@@ -172,28 +191,15 @@ def generate_layout_from_entrance(entrance, fixtures, outer_width, outer_height)
     return positions, dimensions, rotations, fixture_names
 
 
-def select_toilet_corner(entry_wall):
+def place_toilet_on_walls(wall_x, wall_y, offset_x, offset_y, toilet, outer_width, outer_height):
     """
-    Select corner for toilet placement based on entry wall.
-    Prefer corner away from entrance.
-    """
-    # Strategy: place toilet in corner opposite or diagonal to entrance
-    corner_preference = {
-        'bottom': 'top-left',     # If entrance on bottom, toilet at top
-        'top': 'bottom-right',    # If entrance on top, toilet at bottom
-        'left': 'top-right',      # If entrance on left, toilet at right
-        'right': 'bottom-left',   # If entrance on right, toilet at left
-    }
-    
-    return corner_preference.get(entry_wall, 'bottom-left')
-
-
-def place_toilet_in_corner(corner, toilet, outer_width, outer_height):
-    """
-    Place toilet in specified corner with 2 edges aligned.
+    Place toilet touching two perpendicular walls (corner constraint).
     
     Args:
-        corner: 'bottom-left', 'bottom-right', 'top-left', 'top-right'
+        wall_x: 'left' or 'right' (which vertical edge)
+        wall_y: 'bottom' or 'top' (which horizontal edge)
+        offset_x: 0.0-1.0 position along vertical wall
+        offset_y: 0.0-1.0 position along horizontal wall
         toilet: fixture dict
         outer_width, outer_height: bounds
         
@@ -203,142 +209,99 @@ def place_toilet_in_corner(corner, toilet, outer_width, outer_height):
     w, h = toilet['width'], toilet['height']
     rotation = False
     
-    corner_positions = {
-        'bottom-left': (0, 0),
-        'bottom-right': (outer_width - w, 0),
-        'top-left': (0, outer_height - h),
-        'top-right': (outer_width - w, outer_height - h)
-    }
-    
-    position = corner_positions.get(corner, (0, 0))
-    
-    return np.array(position), rotation
-
-
-def place_wash_basin_near_entrance(entrance, basin, outer_width, outer_height, 
-                                   toilet_pos, toilet, toilet_rot):
-    """
-    Place wash basin near entrance, typically on adjacent wall.
-    Longer side must be along edge.
-    
-    Args:
-        entrance: entrance dict
-        basin: fixture dict
-        outer_width, outer_height: bounds
-        toilet_pos: toilet position to avoid
-        toilet: toilet fixture
-        toilet_rot: toilet rotation
-        
-    Returns:
-        position (x, y), rotation (bool)
-    """
-    entry_wall = entrance['wall']
-    w, h = basin['width'], basin['height']
-    
-    # Determine which wall to place basin on
-    # Strategy: adjacent to entrance wall, avoiding toilet
-    if entry_wall == 'bottom':
-        # Try left wall
-        wall = 'left'
-        # Rotate to make longer side vertical (along wall)
-        if w > h:
-            rotation = True
-            actual_w, actual_h = h, w
-        else:
-            rotation = False
-            actual_w, actual_h = w, h
-        
-        # Position on left wall, offset from bottom
-        position = np.array([0, 0.3])
-        
-    elif entry_wall == 'top':
-        # Try right wall
-        wall = 'right'
-        if w > h:
-            rotation = True
-            actual_w, actual_h = h, w
-        else:
-            rotation = False
-            actual_w, actual_h = w, h
-        
-        position = np.array([outer_width - actual_w, outer_height - actual_h - 0.3])
-        
-    elif entry_wall == 'left':
-        # Try bottom wall
-        wall = 'bottom'
-        if h > w:
-            rotation = True
-            actual_w, actual_h = h, w
-        else:
-            rotation = False
-            actual_w, actual_h = w, h
-        
-        position = np.array([0.3, 0])
-        
+    # X position based on vertical wall
+    if wall_x == 'left':
+        x = 0
     else:  # right
-        # Try top wall
-        wall = 'top'
-        if h > w:
-            rotation = True
-            actual_w, actual_h = h, w
-        else:
-            rotation = False
-            actual_w, actual_h = w, h
-        
-        position = np.array([outer_width - actual_w - 0.3, outer_height - actual_h])
+        x = outer_width - w
     
+    # Y position based on horizontal wall
+    if wall_y == 'bottom':
+        y = 0
+    else:  # top
+        y = outer_height - h
+    
+    # Apply offsets (allows moving away from exact corner)
+    # offset_x/y are ratios that can move toilet along the wall it touches
+    if wall_x == 'left':
+        # Can move right, but still touch left wall (x stays 0)
+        x = 0
+    else:  # right
+        # Can move left, but still touch right wall
+        x = outer_width - w
+    
+    if wall_y == 'bottom':
+        # Can move up, but still touch bottom wall (y stays 0)
+        y = 0
+    else:  # top
+        # Can move down, but still touch top wall
+        y = outer_height - h
+    
+    # Note: offsets could be used for fine-tuning if corners aren't exactly at edges
+    # For strict corner placement, we keep exact edge alignment
+    
+    position = np.array([x, y])
     return position, rotation
 
 
-def place_urinal_on_edge(entry_wall, urinal, outer_width, outer_height,
-                        occupied_positions, occupied_fixtures, occupied_rotations):
+def place_fixture_on_wall(wall, position_ratio, fixture, outer_width, outer_height):
     """
-    Place urinal with longer side along edge, avoiding occupied spaces.
+    Place fixture on specified wall at specified position.
+    Automatically orients longer side along the wall.
     
     Args:
-        entry_wall: entrance wall
-        urinal: fixture dict
+        wall: 'bottom', 'top', 'left', 'right'
+        position_ratio: position along wall (0.0 = start, 1.0 = end)
+        fixture: fixture dict
         outer_width, outer_height: bounds
-        occupied_positions: list of occupied positions
-        occupied_fixtures: list of fixture dicts
-        occupied_rotations: list of rotations
         
     Returns:
         position (x, y), rotation (bool)
     """
-    w, h = urinal['width'], urinal['height']
+    w, h = fixture['width'], fixture['height']
+    longer_side = max(w, h)
+    shorter_side = min(w, h)
     
-    # Try to place on wall opposite to entrance or remaining space
-    if entry_wall in ['bottom', 'top']:
-        # Place on left or right wall
-        wall = 'right'  # Default to right
-        
-        # Rotate to make longer side vertical
-        if w > h:
-            rotation = True
-            actual_w, actual_h = h, w
-        else:
-            rotation = False
-            actual_w, actual_h = w, h
-        
-        # Find available space on right wall
-        position = np.array([outer_width - actual_w, 1.0])
-        
-    else:  # entry on left or right
-        # Place on bottom or top wall
-        wall = 'bottom'  # Default to bottom
-        
-        # Rotate to make longer side horizontal
+    # Determine rotation based on wall and fixture dimensions
+    if wall in ['bottom', 'top']:
+        # Horizontal walls - need horizontal orientation (longer side horizontal)
         if h > w:
+            # Currently vertical, need to rotate
             rotation = True
             actual_w, actual_h = h, w
         else:
             rotation = False
             actual_w, actual_h = w, h
         
-        # Find available space on bottom wall
-        position = np.array([1.5, 0])
+        # Calculate position
+        available_length = outer_width - actual_w
+        x = position_ratio * available_length
+        
+        if wall == 'bottom':
+            y = 0
+        else:  # top
+            y = outer_height - actual_h
+            
+    else:  # left or right walls
+        # Vertical walls - need vertical orientation (longer side vertical)
+        if w > h:
+            # Currently horizontal, need to rotate
+            rotation = True
+            actual_w, actual_h = h, w
+        else:
+            rotation = False
+            actual_w, actual_h = w, h
+        
+        # Calculate position
+        available_length = outer_height - actual_h
+        y = position_ratio * available_length
+        
+        if wall == 'left':
+            x = 0
+        else:  # right
+            x = outer_width - actual_w
     
+    position = np.array([x, y])
     return position, rotation
 
 
@@ -398,13 +361,22 @@ def run_packing():
     
     return positions, dimensions, rotations, fixture_names, combined_score
 
-    import matplotlib.pyplot as plt
+
+    """
+Add this function to initial.py to visualize with entrance point
+"""
+
+import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-def visualize():
-    """Simple visualization of the bathroom layout"""
+
+def visualize_with_entrance():
+    """Visualize bathroom layout with entrance point marked"""
     # Get the layout
     positions, dimensions, rotations, fixture_names, score = run_packing()
+    
+    # Get entrance point (need to expose this from construct_packing)
+    entrance = select_entrance_point()
     
     # Create figure
     fig, ax = plt.subplots(figsize=(10, 8))
@@ -434,7 +406,7 @@ def visualize():
                                 edgecolor='black',
                                 facecolor=colors[name])
         ax.add_patch(rect)
-        # s
+        
         # Add label
         cx, cy = x + w/2, y + h/2
         area = dimensions[i, 0] * dimensions[i, 1]
@@ -442,20 +414,91 @@ def visualize():
         ax.text(cx, cy, label, ha='center', va='center', 
                fontsize=10, fontweight='bold')
     
+    # Draw entrance point
+    ex, ey = entrance['position']
+    wall = entrance['wall']
+    
+    # Draw entrance marker (arrow pointing inward)
+    arrow_size = 0.2
+    
+    if wall == 'bottom':
+        # Arrow pointing up from bottom
+        arrow = patches.FancyArrow(
+            ex, ey - arrow_size*1.5, 0, arrow_size,
+            width=0.15, head_width=0.25, head_length=0.1,
+            fc='red', ec='darkred', linewidth=2, zorder=10
+        )
+        text_pos = (ex, ey - arrow_size*2)
+        
+    elif wall == 'top':
+        # Arrow pointing down from top
+        arrow = patches.FancyArrow(
+            ex, ey + arrow_size*1.5, 0, -arrow_size,
+            width=0.15, head_width=0.25, head_length=0.1,
+            fc='red', ec='darkred', linewidth=2, zorder=10
+        )
+        text_pos = (ex, ey + arrow_size*2)
+        
+    elif wall == 'left':
+        # Arrow pointing right from left
+        arrow = patches.FancyArrow(
+            ex - arrow_size*1.5, ey, arrow_size, 0,
+            width=0.15, head_width=0.25, head_length=0.1,
+            fc='red', ec='darkred', linewidth=2, zorder=10
+        )
+        text_pos = (ex - arrow_size*2.5, ey)
+        
+    else:  # right
+        # Arrow pointing left from right
+        arrow = patches.FancyArrow(
+            ex + arrow_size*1.5, ey, -arrow_size, 0,
+            width=0.15, head_width=0.25, head_length=0.1,
+            fc='red', ec='darkred', linewidth=2, zorder=10
+        )
+        text_pos = (ex + arrow_size*2.5, ey)
+    
+    ax.add_patch(arrow)
+    
+    # Add entrance label
+    ax.text(text_pos[0], text_pos[1], 'ENTRANCE', 
+           ha='center', va='center',
+           fontsize=10, fontweight='bold', color='darkred',
+           bbox=dict(boxstyle='round', facecolor='white', 
+                    edgecolor='red', linewidth=2))
+    
+    # Add entrance dot
+    ax.plot(ex, ey, 'ro', markersize=10, zorder=11)
+    
     # Set limits and aspect
-    ax.set_xlim(-0.3, 3.3)
-    ax.set_ylim(-0.3, 2.8)
+    ax.set_xlim(-0.5, 3.5)
+    ax.set_ylim(-0.5, 3.0)
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.3)
     
-    # Title
-    ax.set_title(f'Bathroom Layout (Score: {score:.3f})', 
-                fontsize=14, fontweight='bold')
+    # Title with entrance info
+    offset_pct = entrance['offset'] * 100
+    title = (f"Bathroom Layout (Score: {score:.3f})\n"
+            f"Entrance: {wall.upper()} wall @ {offset_pct:.0f}%")
+    ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_xlabel('Width (m)')
     ax.set_ylabel('Height (m)')
     
     plt.tight_layout()
     plt.show()
 
-if __name__ == "__main__":
-    visualize()
+
+# # Run this to visualize with entrance
+# if __name__ == "__main__":
+#     visualize_with_entrance()
+#EVOLVE START
+construct_packing(entrance_wall='bottom',
+    entrance_offset=0.5,
+    toilet_wall_x='left',
+    toilet_wall_y='top',
+    toilet_offset_x=0.0,
+    toilet_offset_y=0.0,
+    urinal_wall='left',
+    urinal_offset=0.1,
+    basin_wall='left',
+    basin_offset=0.15)
+# EVOLVE END
