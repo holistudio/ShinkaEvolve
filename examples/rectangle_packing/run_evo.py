@@ -63,21 +63,38 @@ db_config = DatabaseConfig(
     **parent_config,
 )
 
-search_task_sys_msg = """You are an expert mathematician specializing in circle packing problems and computational geometry. The best known result for the sum of radii when packing 26 circles in a unit square is 2.635.
+search_task_sys_msg = """You are an expert mathematician and architect doing Toilet Layout Optimization against Constraints.
 
-Key directions to explore:
-1. The optimal arrangement likely involves variable-sized circles
-2. A pure hexagonal arrangement may not be optimal due to edge effects
-3. The densest known circle packings often use a hybrid approach
-4. The optimization routine is critically important - simple physics-based models with carefully tuned parameters
-5. Consider strategic placement of circles at square corners and edges
-6. Adjusting the pattern to place larger circles at the center and smaller at the edges
-7. The math literature suggests special arrangements for specific values of n
-8. You can use the scipy optimize package (e.g. LP or SLSQP) to optimize the radii given center locations and constraints
+Goal: Study the design constraints for a minimum-sized toilet layout.
 
-Make sure that all circles are disjoint and lie inside the unit square.
+1. Element Definition (Keys & Index)
 
-Be creative and try to find a new solution better than the best known result."""
+Key: Type (Element Category)
+WC (Water Closet)
+Urinal
+Wash Basin (Sink)
+Corridor (Passage)
+Key: Color (Representation)
+Blue (B): Outline of Fixtures
+Red (R): Passage / Corridor Area
+Index: Used to denote variations within the same Type.
+Example 1: WC-1, WC-2, WC-3 (Different door positions)
+Example 2: Basin-1 (No door), Basin-2, Basin-3, Basin-4 (Different door positions)
+
+2. Absolute Constraints (Hard Constraints)
+
+No B/B Overlap: Blue (B) elements must not overlap with other Blue (B) elements.
+No B/R Overlap: Blue (B) elements must not overlap with Red (R) elements.
+Type Adjacency: Elements of the same Type (WC, Urinal, or Wash Basin) must be placed adjacent to each other.
+Accessibility Constraint: Do not create a Red (R) area (Corridor/Passage) that is completely enclosed by Blue (B) elements. ( $\rightarrow$ Ensure toilet fixtures are accessible from the Corridor.)
+The Green Line must border the perimeter.
+
+3. Optimization/Preference Constraints (Soft Constraints)
+
+Minimize Total Perimeter: Minimize the sum of the perimeters of all WC, Urinal, and Wash Basin elements.
+R/R Overlap Preference: Red (R) elements should preferably overlap with other Red (R) elements (i.e., consolidate the corridor space).
+Corridor Count: The number of Corridors is arbitrary, but should be minimized (for area reduction).
+"""
 
 
 evo_config = EvolutionConfig(
@@ -91,13 +108,13 @@ evo_config = EvolutionConfig(
     job_type="local",
     language="python",
     llm_models=[
-        "gemini-2.5-pro",
+        # "gemini-2.5-pro",
         "gemini-2.5-flash",
-        "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",
-        "o4-mini",
-        "gpt-5",
-        "gpt-5-mini",
-        "gpt-5-nano",
+        # "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",
+        # "o4-mini",
+        # "gpt-5",
+        # "gpt-5-mini",
+        # "gpt-5-nano",
     ],
     llm_kwargs=dict(
         temperatures=[0.0, 0.5, 1.0],
@@ -105,11 +122,16 @@ evo_config = EvolutionConfig(
         max_tokens=32768,
     ),
     meta_rec_interval=10,
-    meta_llm_models=["gpt-5-nano"],
+    # meta_llm_models=["gpt-5-nano"],
+    # meta_llm_models=["gemini-2.5-pro"],
+    meta_llm_models=["gemini-2.5-flash"],
     meta_llm_kwargs=dict(temperatures=[0.0], max_tokens=16384),
-    embedding_model="text-embedding-3-small",
+    # embedding_model="text-embedding-3-small",
+    embedding_model="gemini-embedding-exp-03-07",
     code_embed_sim_threshold=0.995,
-    novelty_llm_models=["gpt-5-nano"],
+    # novelty_llm_models=["gpt-5-nano"],
+    # novelty_llm_models=["gemini-2.5-pro"],
+    novelty_llm_models=["gemini-2.5-flash"],
     novelty_llm_kwargs=dict(temperatures=[0.0], max_tokens=16384),
     llm_dynamic_selection="ucb1",
     llm_dynamic_selection_kwargs=dict(exploration_coef=1.0),
