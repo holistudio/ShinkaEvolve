@@ -1,8 +1,7 @@
 import numpy as np
 
-
-def construct_packing(
-    entrance_wall='bottom',
+#EVOLVE START
+construct_packing(entrance_wall='bottom',
     entrance_offset=0.5,
     toilet_wall_x='left',
     toilet_wall_y='top',
@@ -11,7 +10,20 @@ def construct_packing(
     urinal_wall='left',
     urinal_offset=0.1,
     basin_wall='left',
-    basin_offset=0.15
+    basin_offset=0.15)
+# EVOLVE END
+
+def construct_packing(
+    entrance_wall,
+    entrance_offset,
+    toilet_wall_x,
+    toilet_wall_y,
+    toilet_offset_x,
+    toilet_offset_y,
+    urinal_wall,
+    urinal_offset,
+    basin_wall,
+    basin_offset
 ):
     """
     Construct an arrangement of 3 bathroom fixtures (toilet, urinal, wash basin)
@@ -490,15 +502,3 @@ def visualize_with_entrance():
 # # Run this to visualize with entrance
 # if __name__ == "__main__":
 #     visualize_with_entrance()
-#EVOLVE START
-construct_packing(entrance_wall='bottom',
-    entrance_offset=0.5,
-    toilet_wall_x='left',
-    toilet_wall_y='top',
-    toilet_offset_x=0.0,
-    toilet_offset_y=0.0,
-    urinal_wall='left',
-    urinal_offset=0.1,
-    basin_wall='left',
-    basin_offset=0.15)
-# EVOLVE END
