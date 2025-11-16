@@ -1,223 +1,374 @@
+"""Constructor-based bathroom fixture layout optimization"""
+
 import numpy as np
 
 
 def construct_packing():
     """
-    Construct an arrangement of 3-9 rectangles in a unit square [0,1]x[0,1]
-    to maximize packing efficiency with bonus for more rectangles.
+    Construct an arrangement of 3 bathroom fixtures (toilet, urinal, wash basin)
+    in a 3.0 x 2.5 unit rectangle to optimize layout based on entrance position.
 
     Returns:
-        Tuple of (positions, dimensions, rotations, num_rectangles)
-        positions: np.array of shape (N, 2) with (x, y) bottom-left corners
-        dimensions: np.array of shape (N, 2) with (width, height) for each rectangle
-        rotations: np.array of shape (N,) with boolean rotation flags (True = 90° rotated)
-        num_rectangles: int, number of rectangles (3-9)
+        Tuple of (positions, dimensions, rotations, fixture_names)
+        positions: np.array of shape (3, 2) with (x, y) bottom-left corners
+        dimensions: np.array of shape (3, 2) with (width, height) for each fixture
+        rotations: np.array of shape (3,) with boolean rotation flags (True = 90° rotated)
+        fixture_names: list of fixture names ["toilet", "urinal", "wash_basin"]
     """
-    # Start with a moderate number of rectangles
-    num_rectangles = 6
+    # Define outer bounds
+    outer_width = 3.0
+    outer_height = 2.5
     
-    # Generate rectangle dimensions with areas in [0.15, 0.65]
-    dimensions = generate_rectangle_dimensions(num_rectangles)
+    # Define fixtures with their constraints
+    fixtures = define_fixtures()
     
-    # Initialize positions (simple grid-based approach)
-    positions = initialize_positions(num_rectangles)
+    # Select entrance point (this is the key generator variable)
+    entrance = select_entrance_point()
     
-    # Initialize rotations (all False initially)
-    rotations = np.zeros(num_rectangles, dtype=bool)
+    # Generate layout based on entrance
+    positions, dimensions, rotations, fixture_names = generate_layout_from_entrance(
+        entrance, fixtures, outer_width, outer_height
+    )
     
-    # Apply simple placement strategy
-    positions, rotations = place_rectangles(dimensions, positions, rotations)
-    
-    return positions, dimensions, rotations, num_rectangles
+    return positions, dimensions, rotations, fixture_names
 
 
-def generate_rectangle_dimensions(n):
+def define_fixtures():
     """
-    Generate n rectangles with areas between 0.15 and 0.65.
-    Uses varied aspect ratios for better packing opportunities.
+    Define the three bathroom fixtures with their constraints.
+    
+    Returns:
+        Dictionary with fixture specifications
+    """
+    fixtures = {
+        'toilet': {
+            'area': 1.5,
+            'aspect_ratio': 0.514,  # width / height
+            'placement_type': 'corner',  # Must touch 2 perpendicular edges
+        },
+        'urinal': {
+            'area': 0.63,
+            'aspect_ratio': 0.7,
+            'placement_type': 'edge',  # Longer side along edge
+        },
+        'wash_basin': {
+            'area': 0.63,
+            'aspect_ratio': 0.7,
+            'placement_type': 'edge',  # Longer side along edge
+        }
+    }
+    
+    # Calculate dimensions from area and aspect ratio
+    # area = w * h, aspect = w/h
+    # => w = sqrt(area * aspect), h = sqrt(area / aspect)
+    for name, fixture in fixtures.items():
+        w = np.sqrt(fixture['area'] * fixture['aspect_ratio'])
+        h = np.sqrt(fixture['area'] / fixture['aspect_ratio'])
+        fixture['width'] = w
+        fixture['height'] = h
+        fixture['name'] = name
+    
+    return fixtures
+
+
+def select_entrance_point():
+    """
+    Select entrance point - this is the key variable that generates layouts.
+    
+    Entrance can be on any of 4 walls at various positions.
+    Evolution will optimize this choice.
+    
+    Returns:
+        dict with 'position' (x, y), 'wall' (bottom/top/left/right), 
+        and 'offset' (position along wall 0.0-1.0)
+    """
+    # Define entrance options
+    # For initial implementation, use bottom wall centered
+    
+    # Wall options: 'bottom', 'top', 'left', 'right'
+    wall = 'bottom'
+    offset = 0.5  # Center of wall (0.0 = start, 1.0 = end)
+    
+    # Calculate actual position based on wall and offset
+    if wall == 'bottom':
+        position = (3.0 * offset, 0)
+    elif wall == 'top':
+        position = (3.0 * offset, 2.5)
+    elif wall == 'left':
+        position = (0, 2.5 * offset)
+    else:  # right
+        position = (3.0, 2.5 * offset)
+    
+    return {
+        'position': position,
+        'wall': wall,
+        'offset': offset
+    }
+
+
+def generate_layout_from_entrance(entrance, fixtures, outer_width, outer_height):
+    """
+    Generate fixture positions based on entrance location.
+    
+    Strategy:
+    1. Toilet goes in corner (preferably away from entrance)
+    2. Wash basin near entrance (for accessibility)
+    3. Urinal fills remaining wall space
     
     Args:
-        n: number of rectangles to generate
+        entrance: dict with entrance info
+        fixtures: dict with fixture specs
+        outer_width, outer_height: container dimensions
         
     Returns:
-        np.array of shape (n, 2) with (width, height) for each rectangle
+        positions, dimensions, rotations, fixture_names
     """
-    dimensions = np.zeros((n, 2))
+    entry_wall = entrance['wall']
     
-    # Generate target areas spread across the allowed range
-    min_area, max_area = 0.15, 0.65
-    areas = np.linspace(min_area, max_area, n)
+    # Initialize arrays for 3 fixtures
+    positions = np.zeros((3, 2))
+    dimensions = np.zeros((3, 2))
+    rotations = np.zeros(3, dtype=bool)
+    fixture_names = ['toilet', 'urinal', 'wash_basin']
     
-    # Mix of aspect ratios (square to rectangular)
-    aspect_ratios = [1.0, 1.5, 2.0, 0.667, 0.5, 1.2, 1.8, 0.8, 1.4]
+    # Get fixture data
+    toilet = fixtures['toilet']
+    urinal = fixtures['urinal']
+    basin = fixtures['wash_basin']
     
-    for i in range(n):
-        area = areas[i]
-        aspect = aspect_ratios[i % len(aspect_ratios)]
-        
-        # width * height = area
-        # width / height = aspect
-        # => width = sqrt(area * aspect), height = sqrt(area / aspect)
-        width = np.sqrt(area * aspect)
-        height = np.sqrt(area / aspect)
-        
-        dimensions[i] = [width, height]
+    # Place toilet in corner based on entrance wall
+    toilet_corner = select_toilet_corner(entry_wall)
+    toilet_pos, toilet_rot = place_toilet_in_corner(
+        toilet_corner, toilet, outer_width, outer_height
+    )
     
-    return dimensions
+    # Place wash basin near entrance
+    basin_pos, basin_rot = place_wash_basin_near_entrance(
+        entrance, basin, outer_width, outer_height, toilet_pos, toilet, toilet_rot
+    )
+    
+    # Place urinal on remaining edge
+    urinal_pos, urinal_rot = place_urinal_on_edge(
+        entry_wall, urinal, outer_width, outer_height, 
+        [toilet_pos, basin_pos], 
+        [toilet, basin],
+        [toilet_rot, basin_rot]
+    )
+    
+    # Assemble results in order: toilet, urinal, wash_basin
+    positions[0] = toilet_pos
+    positions[1] = urinal_pos
+    positions[2] = basin_pos
+    
+    # Dimensions (accounting for rotation)
+    dimensions[0] = [toilet['width'], toilet['height']]
+    dimensions[1] = [urinal['width'], urinal['height']]
+    dimensions[2] = [basin['width'], basin['height']]
+    
+    rotations[0] = toilet_rot
+    rotations[1] = urinal_rot
+    rotations[2] = basin_rot
+    
+    return positions, dimensions, rotations, fixture_names
 
 
-def initialize_positions(n):
+def select_toilet_corner(entry_wall):
     """
-    Initialize positions in a simple grid layout.
+    Select corner for toilet placement based on entry wall.
+    Prefer corner away from entrance.
+    """
+    # Strategy: place toilet in corner opposite or diagonal to entrance
+    corner_preference = {
+        'bottom': 'top-left',     # If entrance on bottom, toilet at top
+        'top': 'bottom-right',    # If entrance on top, toilet at bottom
+        'left': 'top-right',      # If entrance on left, toilet at right
+        'right': 'bottom-left',   # If entrance on right, toilet at left
+    }
+    
+    return corner_preference.get(entry_wall, 'bottom-left')
+
+
+def place_toilet_in_corner(corner, toilet, outer_width, outer_height):
+    """
+    Place toilet in specified corner with 2 edges aligned.
     
     Args:
-        n: number of rectangles
+        corner: 'bottom-left', 'bottom-right', 'top-left', 'top-right'
+        toilet: fixture dict
+        outer_width, outer_height: bounds
         
     Returns:
-        np.array of shape (n, 2) with initial (x, y) positions
+        position (x, y), rotation (bool)
     """
-    positions = np.zeros((n, 2))
+    w, h = toilet['width'], toilet['height']
+    rotation = False
     
-    # Simple grid: try to arrange in roughly square grid
-    cols = int(np.ceil(np.sqrt(n)))
-    spacing = 1.0 / cols
+    corner_positions = {
+        'bottom-left': (0, 0),
+        'bottom-right': (outer_width - w, 0),
+        'top-left': (0, outer_height - h),
+        'top-right': (outer_width - w, outer_height - h)
+    }
     
-    for i in range(n):
-        row = i // cols
-        col = i % cols
-        positions[i] = [col * spacing + 0.05, row * spacing + 0.05]
+    position = corner_positions.get(corner, (0, 0))
     
-    return positions
+    return np.array(position), rotation
 
 
-def place_rectangles(dimensions, positions, rotations):
+def place_wash_basin_near_entrance(entrance, basin, outer_width, outer_height, 
+                                   toilet_pos, toilet, toilet_rot):
     """
-    Place rectangles using a simple shelf-packing strategy.
+    Place wash basin near entrance, typically on adjacent wall.
+    Longer side must be along edge.
     
     Args:
-        dimensions: (n, 2) array of rectangle dimensions
-        positions: (n, 2) array of initial positions
-        rotations: (n,) boolean array
+        entrance: entrance dict
+        basin: fixture dict
+        outer_width, outer_height: bounds
+        toilet_pos: toilet position to avoid
+        toilet: toilet fixture
+        toilet_rot: toilet rotation
         
     Returns:
-        Updated (positions, rotations)
+        position (x, y), rotation (bool)
     """
-    n = len(dimensions)
+    entry_wall = entrance['wall']
+    w, h = basin['width'], basin['height']
     
-    # Sort rectangles by area (largest first) for better packing
-    areas = dimensions[:, 0] * dimensions[:, 1]
-    sorted_indices = np.argsort(-areas)
-    
-    # Shelf packing: place rectangles left to right, then new shelf
-    current_x = 0.0
-    current_y = 0.0
-    shelf_height = 0.0
-    
-    new_positions = np.zeros_like(positions)
-    new_rotations = np.zeros_like(rotations)
-    
-    for idx in sorted_indices:
-        width, height = dimensions[idx]
-        
-        # Check if it fits in current position
-        if current_x + width <= 1.0 and current_y + height <= 1.0:
-            # Fits as-is
-            new_positions[idx] = [current_x, current_y]
-            new_rotations[idx] = False
-            current_x += width
-            shelf_height = max(shelf_height, height)
-        elif current_x + height <= 1.0 and current_y + width <= 1.0:
-            # Try 90° rotation
-            new_positions[idx] = [current_x, current_y]
-            new_rotations[idx] = True
-            current_x += height
-            shelf_height = max(shelf_height, width)
+    # Determine which wall to place basin on
+    # Strategy: adjacent to entrance wall, avoiding toilet
+    if entry_wall == 'bottom':
+        # Try left wall
+        wall = 'left'
+        # Rotate to make longer side vertical (along wall)
+        if w > h:
+            rotation = True
+            actual_w, actual_h = h, w
         else:
-            # Move to next shelf
-            current_x = 0.0
-            current_y += shelf_height
-            shelf_height = 0.0
-            
-            # Place on new shelf
-            if current_y + height <= 1.0:
-                new_positions[idx] = [current_x, current_y]
-                new_rotations[idx] = False
-                current_x += width
-                shelf_height = height
-            elif current_y + width <= 1.0:
-                # Try rotated on new shelf
-                new_positions[idx] = [current_x, current_y]
-                new_rotations[idx] = True
-                current_x += height
-                shelf_height = width
-            else:
-                # Fallback: place at origin with minimal size
-                new_positions[idx] = [0.05, 0.05]
-                new_rotations[idx] = False
+            rotation = False
+            actual_w, actual_h = w, h
+        
+        # Position on left wall, offset from bottom
+        position = np.array([0, 0.3])
+        
+    elif entry_wall == 'top':
+        # Try right wall
+        wall = 'right'
+        if w > h:
+            rotation = True
+            actual_w, actual_h = h, w
+        else:
+            rotation = False
+            actual_w, actual_h = w, h
+        
+        position = np.array([outer_width - actual_w, outer_height - actual_h - 0.3])
+        
+    elif entry_wall == 'left':
+        # Try bottom wall
+        wall = 'bottom'
+        if h > w:
+            rotation = True
+            actual_w, actual_h = h, w
+        else:
+            rotation = False
+            actual_w, actual_h = w, h
+        
+        position = np.array([0.3, 0])
+        
+    else:  # right
+        # Try top wall
+        wall = 'top'
+        if h > w:
+            rotation = True
+            actual_w, actual_h = h, w
+        else:
+            rotation = False
+            actual_w, actual_h = w, h
+        
+        position = np.array([outer_width - actual_w - 0.3, outer_height - actual_h])
     
-    return new_positions, new_rotations
+    return position, rotation
 
 
-def check_valid_placement(positions, dimensions, rotations):
+def place_urinal_on_edge(entry_wall, urinal, outer_width, outer_height,
+                        occupied_positions, occupied_fixtures, occupied_rotations):
     """
-    Check if the placement is valid (no overlaps, all in bounds).
+    Place urinal with longer side along edge, avoiding occupied spaces.
     
     Args:
-        positions: (n, 2) array of positions
-        dimensions: (n, 2) array of dimensions
-        rotations: (n,) boolean array
+        entry_wall: entrance wall
+        urinal: fixture dict
+        outer_width, outer_height: bounds
+        occupied_positions: list of occupied positions
+        occupied_fixtures: list of fixture dicts
+        occupied_rotations: list of rotations
         
     Returns:
-        Boolean indicating if placement is valid
+        position (x, y), rotation (bool)
     """
-    n = len(positions)
+    w, h = urinal['width'], urinal['height']
     
-    # Get actual dimensions after rotation
-    actual_dims = np.copy(dimensions)
-    for i in range(n):
-        if rotations[i]:
-            actual_dims[i] = [dimensions[i, 1], dimensions[i, 0]]
+    # Try to place on wall opposite to entrance or remaining space
+    if entry_wall in ['bottom', 'top']:
+        # Place on left or right wall
+        wall = 'right'  # Default to right
+        
+        # Rotate to make longer side vertical
+        if w > h:
+            rotation = True
+            actual_w, actual_h = h, w
+        else:
+            rotation = False
+            actual_w, actual_h = w, h
+        
+        # Find available space on right wall
+        position = np.array([outer_width - actual_w, 1.0])
+        
+    else:  # entry on left or right
+        # Place on bottom or top wall
+        wall = 'bottom'  # Default to bottom
+        
+        # Rotate to make longer side horizontal
+        if h > w:
+            rotation = True
+            actual_w, actual_h = h, w
+        else:
+            rotation = False
+            actual_w, actual_h = w, h
+        
+        # Find available space on bottom wall
+        position = np.array([1.5, 0])
     
-    # Check bounds
-    for i in range(n):
-        x, y = positions[i]
-        w, h = actual_dims[i]
-        if x < 0 or y < 0 or x + w > 1.0 or y + h > 1.0:
-            return False
-    
-    # Check overlaps
-    for i in range(n):
-        for j in range(i + 1, n):
-            if rectangles_overlap(positions[i], actual_dims[i], 
-                                 positions[j], actual_dims[j]):
-                return False
-    
-    return True
+    return position, rotation
 
 
-def rectangles_overlap(pos1, dim1, pos2, dim2):
+def check_overlap(pos1, dim1, rot1, pos2, dim2, rot2, margin=0.0):
     """
-    Check if two axis-aligned rectangles overlap.
+    Check if two rectangles overlap with optional margin.
     
     Args:
         pos1, pos2: (x, y) positions
         dim1, dim2: (width, height) dimensions
+        rot1, rot2: rotation flags
+        margin: minimum separation distance
         
     Returns:
-        Boolean indicating overlap
+        bool: True if overlap (including margin)
     """
+    # Apply rotation to dimensions
+    w1, h1 = (dim1[1], dim1[0]) if rot1 else (dim1[0], dim1[1])
+    w2, h2 = (dim2[1], dim2[0]) if rot2 else (dim2[0], dim2[1])
+    
     x1, y1 = pos1
-    w1, h1 = dim1
     x2, y2 = pos2
-    w2, h2 = dim2
     
-    # No overlap if separated horizontally or vertically
-    if x1 + w1 <= x2 or x2 + w2 <= x1:
-        return False
-    if y1 + h1 <= y2 or y2 + h2 <= y1:
-        return False
+    # Check separation with margin
+    if x1 + w1 + margin <= x2 or x2 + w2 + margin <= x1:
+        return False  # Separated horizontally
+    if y1 + h1 + margin <= y2 or y2 + h2 + margin <= y1:
+        return False  # Separated vertically
     
-    return True
+    return True  # Overlap
 
 
 # EVOLVE-BLOCK-END
@@ -225,16 +376,86 @@ def rectangles_overlap(pos1, dim1, pos2, dim2):
 
 # This part remains fixed (not evolved)
 def run_packing():
-    """Run the rectangle packing constructor"""
-    positions, dimensions, rotations, num_rectangles = construct_packing()
+    """Run the bathroom fixture layout constructor"""
+    positions, dimensions, rotations, fixture_names = construct_packing()
     
-    # Calculate total area and score
+    # Calculate metrics
     total_area = 0.0
-    for i in range(num_rectangles):
+    for i in range(len(fixture_names)):
         total_area += dimensions[i, 0] * dimensions[i, 1]
     
-    packing_efficiency = total_area / 1.0
-    BONUS_WEIGHT = 0.1
-    combined_score = packing_efficiency + BONUS_WEIGHT * num_rectangles
+    # For bathroom, scoring could be based on:
+    # - Valid placement (all constraints met)
+    # - Accessibility (clearance from entrance)
+    # - Efficiency (space utilization)
     
-    return positions, dimensions, rotations, num_rectangles, combined_score
+    outer_area = 3.0 * 2.5  # 7.5 sq units
+    space_efficiency = total_area / outer_area
+    
+    # Simple scoring: high efficiency is good
+    # In practice, you might add accessibility, flow, and ergonomic scores
+    combined_score = space_efficiency
+    
+    return positions, dimensions, rotations, fixture_names, combined_score
+
+    import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+def visualize():
+    """Simple visualization of the bathroom layout"""
+    # Get the layout
+    positions, dimensions, rotations, fixture_names, score = run_packing()
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Draw outer boundary (3.0 x 2.5)
+    boundary = patches.Rectangle((0, 0), 3.0, 2.5, 
+                                linewidth=3, edgecolor='black', 
+                                facecolor='white')
+    ax.add_patch(boundary)
+    
+    # Colors for each fixture
+    colors = {'toilet': 'lightblue', 'urinal': 'lightyellow', 'wash_basin': 'lightgreen'}
+    
+    # Draw each fixture
+    for i in range(3):
+        x, y = positions[i]
+        w, h = dimensions[i]
+        name = fixture_names[i]
+        
+        # Apply rotation
+        if rotations[i]:
+            w, h = h, w
+        
+        # Draw rectangle
+        rect = patches.Rectangle((x, y), w, h,
+                                linewidth=2, 
+                                edgecolor='black',
+                                facecolor=colors[name])
+        ax.add_patch(rect)
+        # s
+        # Add label
+        cx, cy = x + w/2, y + h/2
+        area = dimensions[i, 0] * dimensions[i, 1]
+        label = f"{name}\n{area:.2f}m²"
+        ax.text(cx, cy, label, ha='center', va='center', 
+               fontsize=10, fontweight='bold')
+    
+    # Set limits and aspect
+    ax.set_xlim(-0.3, 3.3)
+    ax.set_ylim(-0.3, 2.8)
+    ax.set_aspect('equal')
+    ax.grid(True, alpha=0.3)
+    
+    # Title
+    ax.set_title(f'Bathroom Layout (Score: {score:.3f})', 
+                fontsize=14, fontweight='bold')
+    ax.set_xlabel('Width (m)')
+    ax.set_ylabel('Height (m)')
+    
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == "__main__":
+    visualize()
