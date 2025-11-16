@@ -1,17 +1,6 @@
 import numpy as np
 
-#EVOLVE START
-construct_packing(entrance_wall='bottom',
-    entrance_offset=0.5,
-    toilet_wall_x='left',
-    toilet_wall_y='top',
-    toilet_offset_x=0.0,
-    toilet_offset_y=0.0,
-    urinal_wall='left',
-    urinal_offset=0.1,
-    basin_wall='left',
-    basin_offset=0.15)
-# EVOLVE END
+
 
 def construct_packing(
     entrance_wall,
@@ -346,8 +335,6 @@ def check_overlap(pos1, dim1, rot1, pos2, dim2, rot2, margin=0.0):
     return True  # Overlap
 
 
-# EVOLVE-BLOCK-END
-
 
 # This part remains fixed (not evolved)
 def run_packing():
@@ -502,3 +489,18 @@ def visualize_with_entrance():
 # # Run this to visualize with entrance
 # if __name__ == "__main__":
 #     visualize_with_entrance()
+
+# EVOLVE-BLOCK-START
+
+construct_packing(entrance_wall='bottom',
+    entrance_offset=0.5,
+    toilet_wall_x='left',
+    toilet_wall_y='top',
+    toilet_offset_x=0.0,
+    toilet_offset_y=0.0,
+    urinal_wall='left',
+    urinal_offset=0.1,
+    basin_wall='left',
+    basin_offset=0.15)
+
+# EVOLVE-BLOCK-END
