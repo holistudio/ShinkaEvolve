@@ -37,7 +37,7 @@ def validate_layout(
     within the bounds.
 
     Args:
-        run_output: The output from the `run_packing` function.
+        run_output: The output from the `construct_packing` function.
         check_overlap_fn: The function to check for overlaps between fixtures.
 
     Returns:
@@ -168,7 +168,7 @@ def main(program_path: str, results_dir: str):
     metrics, correct, error_msg = run_shinka_eval(
         program_path=program_path,
         results_dir=results_dir,
-        experiment_fn_name="run_packing",
+        experiment_fn_name="construct_packing",
         num_runs=num_experiment_runs,
         get_experiment_kwargs=get_layout_kwargs,
         validate_fn=_validate_with_context,
@@ -196,7 +196,7 @@ if __name__ == "__main__":
         "--program_path",
         type=str,
         default="initial.py",
-        help="Path to program to evaluate (must contain 'run_packing' and 'check_overlap')",
+        help="Path to program to evaluate (must contain 'construct_packing' and 'check_overlap')",
     )
     parser.add_argument(
         "--results_dir",
