@@ -492,7 +492,216 @@ def visualize_with_entrance():
     
     plt.tight_layout()
     plt.show()
+import rhino3dm as rg
 
+def export_to_rhino_3dm(output_path='bathroom_layout.3dm'):
+    """
+    Export bathroom layout to Rhino 3DM file
+    
+    Parameters:
+    -----------
+    output_path : str
+        Path where the 3dm file will be saved
+    """
+    # Get the layout
+    positions, dimensions, rotations, fixture_names, score = run_packing()
+    
+    # Get entrance point
+    entrance = select_entrance_point()
+    
+    # Create a new Rhino 3dm file
+    model = rg.File3dm()
+    
+    # Set up layers
+    layer_boundary = rg.Layer()
+    layer_boundary.Name = "Boundary"
+    layer_boundary.Color = (0, 0, 0, 255)  # Black
+    model.Layers.Add(layer_boundary)
+    
+    layer_toilet = rg.Layer()
+    layer_toilet.Name = "Toilet"
+    layer_toilet.Color = (173, 216, 230, 255)  # Light blue
+    model.Layers.Add(layer_toilet)
+    
+    layer_urinal = rg.Layer()
+    layer_urinal.Name = "Urinal"
+    layer_urinal.Color = (255, 255, 224, 255)  # Light yellow
+    model.Layers.Add(layer_urinal)
+    
+    layer_basin = rg.Layer()
+    layer_basin.Name = "WashBasin"
+    layer_basin.Color = (144, 238, 144, 255)  # Light green
+    model.Layers.Add(layer_basin)
+    
+    layer_entrance = rg.Layer()
+    layer_entrance.Name = "Entrance"
+    layer_entrance.Color = (255, 0, 0, 255)  # Red
+    model.Layers.Add(layer_entrance)
+    
+    # Layer mapping
+    layer_map = {
+        'toilet': 1,
+        'urinal': 2,
+        'wash_basin': 3
+    }
+    
+    # 1. Draw outer boundary (3.0 x 2.5)
+    boundary_corners = [
+        rg.Point3d(0, 0, 0),
+        rg.Point3d(3.0, 0, 0),
+        rg.Point3d(3.0, 2.5, 0),
+        rg.Point3d(0, 2.5, 0),
+        rg.Point3d(0, 0, 0)
+    ]
+    boundary_curve = rg.Polyline(boundary_corners).ToNurbsCurve()
+    
+    attrs_boundary = rg.ObjectAttributes()
+    attrs_boundary.LayerIndex = 0
+    attrs_boundary.Name = "Bathroom Boundary"
+    model.Objects.AddCurve(boundary_curve, attrs_boundary)
+    
+    # 2. Draw each fixture as rectangles
+    for i in range(3):
+        x, y = positions[i]
+        w, h = dimensions[i]
+        name = fixture_names[i]
+        
+        # Apply rotation
+        if rotations[i]:
+            w, h = h, w
+        
+        # Create rectangle corners
+        corners = [
+            rg.Point3d(x, y, 0),
+            rg.Point3d(x + w, y, 0),
+            rg.Point3d(x + w, y + h, 0),
+            rg.Point3d(x, y + h, 0),
+            rg.Point3d(x, y, 0)
+        ]
+        fixture_curve = rg.Polyline(corners).ToNurbsCurve()
+        
+        # Create hatch/surface for the fixture
+        fixture_planar_curve = rg.Curve.CreateControlPointCurve([
+            rg.Point3d(x, y, 0),
+            rg.Point3d(x + w, y, 0),
+            rg.Point3d(x + w, y + h, 0),
+            rg.Point3d(x, y + h, 0)
+        ], 1)
+        
+        attrs_fixture = rg.ObjectAttributes()
+        attrs_fixture.LayerIndex = layer_map[name]
+        area = dimensions[i, 0] * dimensions[i, 1]
+        attrs_fixture.Name = f"{name} ({area:.2f}m²)"
+        
+        # Add curve
+        model.Objects.AddCurve(fixture_curve, attrs_fixture)
+        
+        # Create a planar surface for the fixture
+        plane = rg.Plane(rg.Point3d(x + w/2, y + h/2, 0), rg.Vector3d.ZAxis)
+        rectangle = rg.Rectangle3d(plane, w, h)
+        surface = rg.NurbsSurface.CreateFromCorners(
+            rg.Point3d(x, y, 0),
+            rg.Point3d(x + w, y, 0),
+            rg.Point3d(x + w, y + h, 0),
+            rg.Point3d(x, y + h, 0)
+        )
+        
+        attrs_surface = rg.ObjectAttributes()
+        attrs_surface.LayerIndex = layer_map[name]
+        attrs_surface.Name = f"{name}_surface"
+        model.Objects.AddSurface(surface, attrs_surface)
+        
+        # Add text label at center
+        cx, cy = x + w/2, y + h/2
+        text_plane = rg.Plane(rg.Point3d(cx, cy, 0), rg.Vector3d.ZAxis)
+        text = f"{name}\n{area:.2f}m²"
+        
+        # Create text entity
+        text_entity = rg.TextEntity()
+        text_entity.Plane = text_plane
+        text_entity.Text = text
+        text_entity.TextHeight = 0.15
+        text_entity.FontFace = "Arial"
+        
+        attrs_text = rg.ObjectAttributes()
+        attrs_text.LayerIndex = layer_map[name]
+        attrs_text.Name = f"{name}_label"
+        model.Objects.AddText(text_entity, attrs_text)
+    
+    # 3. Draw entrance point
+    ex, ey = entrance['position']
+    wall = entrance['wall']
+    
+    # Add entrance point
+    entrance_point = rg.Point3d(ex, ey, 0)
+    attrs_entrance_pt = rg.ObjectAttributes()
+    attrs_entrance_pt.LayerIndex = 4  # Entrance layer
+    attrs_entrance_pt.Name = "Entrance Point"
+    model.Objects.AddPoint(entrance_point, attrs_entrance_pt)
+    
+    # Draw entrance arrow
+    arrow_size = 0.2
+    
+    if wall == 'bottom':
+        start = rg.Point3d(ex, ey - arrow_size*1.5, 0)
+        end = rg.Point3d(ex, ey - arrow_size*0.5, 0)
+        text_pos = rg.Point3d(ex, ey - arrow_size*2, 0)
+    elif wall == 'top':
+        start = rg.Point3d(ex, ey + arrow_size*1.5, 0)
+        end = rg.Point3d(ex, ey + arrow_size*0.5, 0)
+        text_pos = rg.Point3d(ex, ey + arrow_size*2, 0)
+    elif wall == 'left':
+        start = rg.Point3d(ex - arrow_size*1.5, ey, 0)
+        end = rg.Point3d(ex - arrow_size*0.5, ey, 0)
+        text_pos = rg.Point3d(ex - arrow_size*2.5, ey, 0)
+    else:  # right
+        start = rg.Point3d(ex + arrow_size*1.5, ey, 0)
+        end = rg.Point3d(ex + arrow_size*0.5, ey, 0)
+        text_pos = rg.Point3d(ex + arrow_size*2.5, ey, 0)
+    
+    # Create arrow line
+    arrow_line = rg.Line(start, end)
+    attrs_arrow = rg.ObjectAttributes()
+    attrs_arrow.LayerIndex = 4
+    attrs_arrow.Name = "Entrance Arrow"
+    model.Objects.AddLine(arrow_line, attrs_arrow)
+    
+    # Add entrance label
+    text_plane_entrance = rg.Plane(text_pos, rg.Vector3d.ZAxis)
+    text_entrance = rg.TextEntity()
+    text_entrance.Plane = text_plane_entrance
+    text_entrance.Text = "ENTRANCE"
+    text_entrance.TextHeight = 0.12
+    text_entrance.FontFace = "Arial"
+    
+    attrs_text_entrance = rg.ObjectAttributes()
+    attrs_text_entrance.LayerIndex = 4
+    attrs_text_entrance.Name = "Entrance_Label"
+    model.Objects.AddText(text_entrance, attrs_text_entrance)
+    
+    # Add metadata as notes
+    offset_pct = entrance['offset'] * 100
+    notes = (
+        f"Bathroom Layout\n"
+        f"Score: {score:.3f}\n"
+        f"Entrance: {wall.upper()} wall @ {offset_pct:.0f}%\n"
+        f"Dimensions: 3.0m x 2.5m"
+    )
+    model.Notes.Notes = notes
+    
+    # Write the file
+    model.Write(output_path, version=7)
+    print(f"✓ 3DM file exported to: {output_path}")
+    print(f"  - Score: {score:.3f}")
+    print(f"  - Entrance: {wall} wall @ {offset_pct:.0f}%")
+    
+    return output_path
+
+
+# Usage example:
+if __name__ == "__main__":
+    # Export to Rhino 3DM
+    export_to_rhino_3dm('bathroom_layout.3dm')
 
 # EVOLVE-BLOCK-START
 
