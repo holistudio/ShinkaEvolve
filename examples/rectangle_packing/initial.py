@@ -361,7 +361,7 @@ def run_packing():
     return positions, dimensions, rotations, fixture_names, combined_score
 
 
-    """
+"""
 Add this function to initial.py to visualize with entrance point
 """
 
@@ -485,10 +485,6 @@ def visualize_with_entrance():
     plt.tight_layout()
     plt.show()
 
-
-# # Run this to visualize with entrance
-# if __name__ == "__main__":
-#     visualize_with_entrance()
 
 # EVOLVE-BLOCK-START
 
